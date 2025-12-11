@@ -388,7 +388,7 @@ function applyTraining(){
     alert('Tu equipo no juega esta jornada.');
     return;
   }
-  trainingBonus = randInt(1,3);
+  trainingBonus = randInt(0,2);
   renderLogEntry(`Entrenamiento realizado: bonificación +${trainingBonus} goles para ${teamNames[managerIndex]}`);
   saveGame();
 }
@@ -558,3 +558,4 @@ if ('serviceWorker' in navigator) {
 </script>
 </body>
 </html>
+
