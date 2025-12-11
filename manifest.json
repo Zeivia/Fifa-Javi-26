@@ -1,0 +1,21 @@
+{
+  "short_name": "FifaJavi26",
+  "name": "Fifa Javi 26 - Manager de fútbol",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f6fafc",
+  "theme_color": "#0b67ff",
+  "orientation": "portrait"
+}

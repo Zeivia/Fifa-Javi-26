@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="es">
+<head>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0b67ff" />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Fifa Javi 26</title>
+<style>
+  :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial}
+  body{margin:18px;background:#f6fafc;color:#0b1220}
+  h1{margin:0 0 12px}
+  .layout{display:grid;grid-template-columns:380px 1fr;gap:16px}
+  .card{background:#fff;border-radius:10px;padding:12px;box-shadow:0 8px 22px rgba(8,20,40,0.05)}
+  label{display:block;margin-bottom:6px;font-weight:600}
+  input[type="text"]{width:100%;padding:6px;border-radius:6px;border:1px solid #d7e0ea}
+  .small{font-size:13px;color:#435}
+  button{padding:8px 10px;border-radius:8px;border:1px solid #cbd8e7;background:#fff;cursor:pointer}
+  .btn-primary{background:#0b67ff;color:#fff;border:none}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{padding:6px;border-bottom:1px solid #eef4fb;text-align:center}
+  th{background:#fbfdff;font-weight:700}
+  td.left{text-align:left;padding-left:8px}
+  .log{max-height:600px;overflow:auto;padding:8px;background:#f7fbff;border-radius:8px}
+  .shield{width:28px;height:28px;vertical-align:middle;border-radius:4px;margin-right:6px;object-fit:contain;border:1px solid #e1eefb}
+  .controls-row{display:flex;gap:8px;align-items:center}
+  #championModal{position:fixed;inset:0;display:none;background:rgba(2,6,23,0.45);align-items:center;justify-content:center}
+  #championCard{background:#fff;padding:18px;border-radius:12px;text-align:center;box-shadow:0 18px 60px rgba(2,6,23,0.2)}
+  .muted{color:#6b7280;font-size:13px}
+  .inline{display:inline-flex;align-items:center;gap:8px}
+  .team-row{display:flex;gap:6px;align-items:center}
+  .choose-btn{font-size:12px;padding:4px 8px}
+</style>
+</head>
+<body>
+<h1>España - 1ª división</h1>
+
+<div class="layout">
+  <div class="card">
+    <h3>Configuración equipos</h3>
+    <p class="small">Lista precargada. Puedes editar nombres y cargar un escudo local con el botón "Elegir escudo".</p>
+    <div id="teamsInputs" style="display:grid;grid-template-columns:1fr;gap:8px;max-height:420px;overflow:auto"></div>
+
+    <div style="margin-top:10px" class="controls-row">
+      <button id="startBtn" class="btn-primary">Comenzar Temporada</button>
+      <button id="loadBtn">Cargar partida</button>
+      <button id="saveBtn">Guardar partida</button>
+    </div>
+
+    <hr style="margin:12px 0" />
+
+    <div id="inGameControls" class="hidden">
+      <div class="small">Elige equipo que diriges</div>
+      <select id="managerSelect" style="width:100%;margin:6px 0;padding:6px;border-radius:6px"></select>
+      <div class="controls-row" style="margin-top:8px">
+        <button id="trainBtn">Entrenar</button>
+        <button id="playBtn" class="btn-primary">Jugar Jornada</button>
+        <button id="newSeasonBtn" class="hidden">Empezar nueva temporada</button>
+      </div>
+      <div style="margin-top:8px" class="small">Jornada: <span id="roundNumber">0</span> / <span id="totalRounds">0</span></div>
+      <div style="margin-top:10px"><div class="small">Registro de jornadas</div><div id="log" class="log"></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div class="small">Clasificación</div>
+        <div class="muted">Puntos y diferencia de goles</div>
+      </div>
+      <div class="muted">Auto-guardado: activado</div>
+    </div>
+
+    <table id="standingsTable">
+      <thead>
+        <tr><th>#</th><th>Equipo</th><th>PJ</th><th>G</th><th>E</th><th>P</th><th>GF</th><th>GC</th><th>DG</th><th>PTS</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <h3 style="margin-top:14px">Resultados (últimas jornadas)</h3>
+    <div id="resultsLog" class="log"></div>
+
+    <h3 style="margin-top:12px">Historial de campeones</h3>
+    <table id="championsTable">
+      <thead><tr><th>Equipo</th><th>Títulos</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Champion modal -->
+<div id="championModal">
+  <div id="championCard">
+    <h2 id="championText"></h2>
+    <div style="font-size:48px">🏆</div>
+    <div style="margin-top:12px">
+      <button id="closeChampionBtn">Cerrar</button>
+      <button id="resetBtn">Empezar nueva temporada</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- Data / Config ---
+const defaultTeams = [
+ "At Madrid","Barcelona","Betis","Bilbao","Celta","Deportivo","Espanyol","Getafe","Gijón","Huesca","Levante","Málaga","R Madrid","R Sociedad","Santander","Sevilla","Valencia","Valladolid","Villarreal","Zaragoza"
+];
+
+const SAVE_KEY = 'copaSaveV3';
+const CHAMPIONS_KEY = 'copaChampionsV3';
+const shieldSize = 28;
+const randInt = (min,max)=>Math.floor(Math.random()*(max-min+1))+min;
+
+// --- State ---
+let teamNames = [...defaultTeams];
+let teamShields = Array(20).fill(null);
+let standings = [];
+let fixtures = [];
+let currentRound = 0;
+let managerIndex = 0;
+let trainingBonus = 0;
+let resultsHistory = [];
+let championsHistory = {};
+
+// --- DOM ---
+const teamsInputs = document.getElementById('teamsInputs');
+const startBtn = document.getElementById('startBtn');
+const loadBtn = document.getElementById('loadBtn');
+const saveBtn = document.getElementById('saveBtn');
+const inGameControls = document.getElementById('inGameControls');
+const managerSelect = document.getElementById('managerSelect');
+const trainBtn = document.getElementById('trainBtn');
+const playBtn = document.getElementById('playBtn');
+const newSeasonBtn = document.getElementById('newSeasonBtn');
+const roundNumber = document.getElementById('roundNumber');
+const totalRounds = document.getElementById('totalRounds');
+const logDiv = document.getElementById('log');
+const standingsTbody = document.querySelector('#standingsTable tbody');
+const resultsLog = document.getElementById('resultsLog');
+const championsTbody = document.querySelector('#championsTable tbody');
+const championModal = document.getElementById('championModal');
+const championText = document.getElementById('championText');
+const closeChampionBtn = document.getElementById('closeChampionBtn');
+const resetBtn = document.getElementById('resetBtn');
+
+// --- Helpers ---
+function escapeHTML(s){ return String(s).replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function makePlaceholderSVG(text,w=shieldSize,h=shieldSize){ const bg='#e6eefc',fg='#0b1220',fs=Math.floor(w/2.2); const svg=`<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}' viewBox='0 0 ${w} ${h}'><rect width='100%' height='100%' rx='4' fill='${bg}'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='${fs}' fill='${fg}'>${escapeHTML(text)}</text></svg>`; return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg); }
+
+// Returns an <img> element for a team; if index invalid uses fallbackName for placeholder
+function shieldImgFor(index, fallbackName){
+  const img=document.createElement('img');
+  img.className='shield';
+  img.width=shieldSize;
+  img.height=shieldSize;
+  if(Number.isInteger(index) && index>=0 && index<teamShields.length){
+    if(teamShields[index]){
+      img.src = teamShields[index];
+    } else {
+      img.src = `shields/${index+1}.png`;
+      img.onerror = ()=>{
+        img.src = makePlaceholderSVG((fallbackName||teamNames[index]||'E').split(' ').map(p=>p[0]).slice(0,2).join('').toUpperCase());
+        img.onerror=null;
+      };
+    }
+  } else {
+    img.src = makePlaceholderSVG((fallbackName||'E').slice(0,2).toUpperCase());
+  }
+  return img;
+}
+
+// file -> dataURL
+function fileToDataURL(file){ return new Promise((res,rej)=>{
+  const r=new FileReader();
+  r.onload=()=>res(r.result);
+  r.onerror=rej;
+  r.readAsDataURL(file);
+}); }
+
+// --- UI: teams inputs ---
+function renderTeamsInputs(){
+  teamsInputs.innerHTML='';
+  for(let i=0;i<20;i++){
+    const row = document.createElement('div');
+    row.className='team-row';
+    const img = shieldImgFor(i);
+    img.style.flex='0 0 auto';
+    const input = document.createElement('input');
+    input.type='text';
+    input.value = teamNames[i] || defaultTeams[i];
+    input.dataset.idx = i;
+    input.addEventListener('input',(e)=>{
+      teamNames[i]=e.target.value;
+      renderStandings();
+      renderChampionsHistory();
+      renderManagerSelect();
+      saveGame();
+    });
+    input.style.flex='1 1 auto';
+    const choose = document.createElement('button');
+    choose.textContent='Elegir escudo';
+    choose.className='choose-btn';
+    const file = document.createElement('input');
+    file.type='file';
+    file.accept='image/*';
+    file.style.display='none';
+    file.addEventListener('change', async(e)=>{
+      const f=e.target.files[0];
+      if(!f) return;
+      try{
+        const data = await fileToDataURL(f);
+        teamShields[i]=data;
+        renderTeamsInputs();
+        saveGame();
+      }catch(err){
+        console.error(err);
+        alert('Fallo al leer el archivo');
+      }
+    });
+    choose.addEventListener('click',()=>file.click());
+    row.appendChild(img);
+    row.appendChild(input);
+    row.appendChild(choose);
+    row.appendChild(file);
+    teamsInputs.appendChild(row);
+  }
+}
+
+// --- Fixtures (double round robin) ---
+function buildRoundRobin(n){
+  const rounds=n-1;
+  const half=n/2;
+  let teams=Array.from({length:n},(_,i)=>i);
+  const roundsArr=[];
+  for(let r=0;r<rounds;r++){
+    const pairs=[];
+    for(let i=0;i<half;i++){
+      pairs.push([teams[i], teams[n-1-i]]);
+    }
+    roundsArr.push(pairs);
+    const fixed = teams[0];
+    const rest = teams.slice(1);
+    rest.unshift(rest.pop());
+    teams = [fixed, ...rest];
+  }
+  return roundsArr;
+}
+function buildDoubleRoundRobin(n){
+  const first=buildRoundRobin(n);
+  const second=first.map(round=> round.map(([a,b])=>[b,a]));
+  return first.concat(second);
+}
+
+// --- Standings helpers ---
+function resetStandings(){
+  standings = teamNames.map(t=>({ name:t, pj:0, g:0, e:0, p:0, gf:0, gc:0, dg:0, pts:0 }));
+}
+function sortStandingsCopy(){
+  return standings.slice().sort((A,B)=>{
+    if(B.pts!==A.pts) return B.pts-A.pts;
+    const dgB=B.gf-B.gc, dgA=A.gf-A.gc;
+    if(dgB!==dgA) return dgB-dgA;
+    if(B.gf!==A.gf) return B.gf-A.gf;
+    return A.name.localeCompare(B.name);
+  });
+}
+
+// --- Renders ---
+function renderManagerSelect(){
+  managerSelect.innerHTML='';
+  teamNames.forEach((t,i)=>{
+    const o=document.createElement('option');
+    o.value=i;
+    o.textContent=t;
+    managerSelect.appendChild(o);
+  });
+  managerSelect.value = managerIndex;
+}
+
+function renderStandings(){
+  const sorted=sortStandingsCopy();
+  standingsTbody.innerHTML='';
+  for(let i=0;i<sorted.length;i++){
+    const s=sorted[i];
+    const tr=document.createElement('tr');
+    tr.innerHTML = `<td>${i+1}</td>`;
+    const tdTeam=document.createElement('td');
+    tdTeam.className='left';
+    const idx = teamNames.indexOf(s.name);
+    tdTeam.appendChild(shieldImgFor(idx>=0?idx:-1, s.name));
+    const span=document.createElement('span');
+    span.textContent=' '+s.name;
+    tdTeam.appendChild(span);
+    tr.appendChild(tdTeam);
+    tr.innerHTML += `<td>${s.pj}</td><td>${s.g}</td><td>${s.e}</td><td>${s.p}</td><td>${s.gf}</td><td>${s.gc}</td><td>${s.dg}</td><td>${s.pts}</td>`;
+    standingsTbody.appendChild(tr);
+  }
+}
+
+function renderResultsLog(){
+  resultsLog.innerHTML='';
+  const maxShow=12;
+  for(let r=Math.max(0,resultsHistory.length-1); r>=0 && (resultsHistory.length-r)<=maxShow; r--){
+    const jornada=resultsHistory[r];
+    const header=document.createElement('div');
+    header.innerHTML=`<strong>Jornada ${r+1}</strong>`;
+    resultsLog.appendChild(header);
+    jornada.forEach(([a,b,gA,gB])=>{
+      const div=document.createElement('div');
+      const span=document.createElement('span');
+      span.className='inline';
+      span.appendChild(shieldImgFor(a));
+      span.appendChild(document.createTextNode(` ${teamNames[a]} ${gA} - ${gB} ${teamNames[b]} `));
+      span.appendChild(shieldImgFor(b));
+      div.appendChild(span);
+      resultsLog.appendChild(div);
+    });
+    resultsLog.appendChild(document.createElement('hr'));
+  }
+}
+
+function renderChampionsHistory(){
+  championsTbody.innerHTML='';
+  const entries=Object.entries(championsHistory);
+  entries.sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+  entries.forEach(([team,count])=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td class='left'></td><td>${count}</td>`;
+    const tdLeft=tr.querySelector('td.left');
+    const img= document.createElement('img');
+    img.className='shield';
+    const idx=teamNames.indexOf(team);
+    if(idx>=0){
+      img.src = teamShields[idx]||`shields/${idx+1}.png`;
+      img.onerror=()=>{ img.src = makePlaceholderSVG(team.slice(0,2).toUpperCase()); img.onerror=null; };
+    } else img.src = makePlaceholderSVG(team.slice(0,2).toUpperCase());
+    tdLeft.appendChild(img);
+    tdLeft.appendChild(document.createTextNode(' '+team));
+    championsTbody.appendChild(tr);
+  });
+}
+
+function renderLogEntry(text){
+  const d=document.createElement('div');
+  d.innerHTML=`<span class='small'>${escapeHTML(text)}</span>`;
+  logDiv.prepend(d);
+}
+
+// --- Game logic ---
+function initSeason(){
+  const inputs = teamsInputs.querySelectorAll('input[type="text"]');
+  inputs.forEach(inp=>{
+    const i=Number(inp.dataset.idx);
+    if(inp.value && inp.value.trim()) teamNames[i]=inp.value.trim();
+    else teamNames[i]=defaultTeams[i];
+  });
+  resetStandings();
+  fixtures = buildDoubleRoundRobin(teamNames.length);
+  currentRound=0;
+  managerIndex=0;
+  trainingBonus=0;
+  resultsHistory=[];
+  renderManagerSelect();
+  renderStandings();
+  renderResultsLog();
+  renderChampionsHistory();
+  inGameControls.classList.remove('hidden');
+  roundNumber.textContent = currentRound+1;
+  totalRounds.textContent = fixtures.length;
+  renderLogEntry('Temporada iniciada.');
+  saveGame();
+}
+
+function applyTraining(){
+  if(!fixtures || !fixtures[currentRound]){
+    alert('Inicia la temporada primero.');
+    return;
+  }
+  managerIndex = Number(managerSelect.value);
+  const matches = fixtures[currentRound];
+  if(!matches || !Array.isArray(matches)){
+    alert('No hay partidos para esta jornada.');
+    return;
+  }
+  const plays = matches.some(([a,b])=>a===managerIndex||b===managerIndex);
+  if(!plays){
+    alert('Tu equipo no juega esta jornada.');
+    return;
+  }
+  trainingBonus = randInt(1,3);
+  renderLogEntry(`Entrenamiento realizado: bonificación +${trainingBonus} goles para ${teamNames[managerIndex]}`);
+  saveGame();
+}
+
+function updateMatchResult(a,b,gA,gB){
+  standings[a].pj++;
+  standings[b].pj++;
+  standings[a].gf += gA;
+  standings[b].gf += gB;
+  standings[a].gc += gB;
+  standings[b].gc += gA;
+  standings[a].dg = standings[a].gf - standings[a].gc;
+  standings[b].dg = standings[b].gf - standings[b].gc;
+  if(gA > gB){
+    standings[a].g++;
+    standings[b].p++;
+    standings[a].pts += 3;
+  } else if(gA === gB){
+    standings[a].e++;
+    standings[b].e++;
+    standings[a].pts++;
+    standings[b].pts++;
+  } else {
+    standings[b].g++;
+    standings[a].p++;
+    standings[b].pts +=3;
+  }
+}
+
+function playRound(){
+  if(currentRound >= fixtures.length){
+    alert('La temporada ha terminado.');
+    return;
+  }
+  const matches = fixtures[currentRound];
+  let jornadaRes = [];
+
+  matches.forEach(([a,b])=>{
+    let gA = randInt(0,3);
+    let gB = randInt(0,3);
+
+    if(a === managerIndex) gA += trainingBonus;
+    if(b === managerIndex) gB += trainingBonus;
+
+    updateMatchResult(a,b,gA,gB);
+
+    jornadaRes.push([a,b,gA,gB]);
+  });
+
+  resultsHistory.push(jornadaRes);
+
+  // Mostrar resultado de tu equipo favorito
+  const miPartido = jornadaRes.find(([a,b])=>a===managerIndex || b===managerIndex);
+  if(miPartido){
+    const [a,b,gA,gB] = miPartido;
+    renderLogEntry(`Resultado jornada: ${teamNames[a]} ${gA} - ${gB} ${teamNames[b]}`);
+  } else {
+    renderLogEntry('Tu equipo no jugó esta jornada.');
+  }
+
+  currentRound++;
+  roundNumber.textContent = currentRound < fixtures.length ? currentRound+1 : fixtures.length;
+  if(currentRound === fixtures.length){
+    renderLogEntry('Temporada terminada.');
+    const champ = sortStandingsCopy()[0];
+    championsHistory[champ.name] = (championsHistory[champ.name]||0)+1;
+    renderChampionsHistory();
+    championText.textContent = `¡${champ.name} campeón de la temporada!`;
+    championModal.style.display = 'flex';
+    newSeasonBtn.classList.remove('hidden');
+  }
+  renderStandings();
+  renderResultsLog();
+  trainingBonus = 0;
+  saveGame();
+}
+
+// --- Save / Load ---
+function saveGame(){
+  const saveData = {
+    teamNames, teamShields, standings, fixtures, currentRound, managerIndex, trainingBonus, resultsHistory, championsHistory
+  };
+  localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
+}
+
+function loadGame(){
+  const raw = localStorage.getItem(SAVE_KEY);
+  if(!raw) return false;
+  try{
+    const data = JSON.parse(raw);
+    teamNames = data.teamNames || [...defaultTeams];
+    teamShields = data.teamShields || Array(20).fill(null);
+    standings = data.standings || [];
+    fixtures = data.fixtures || [];
+    currentRound = data.currentRound || 0;
+    managerIndex = data.managerIndex || 0;
+    trainingBonus = data.trainingBonus || 0;
+    resultsHistory = data.resultsHistory || [];
+    championsHistory = data.championsHistory || {};
+    renderTeamsInputs();
+    renderManagerSelect();
+    renderStandings();
+    renderResultsLog();
+    renderChampionsHistory();
+    if(fixtures.length > 0){
+      inGameControls.classList.remove('hidden');
+      roundNumber.textContent = currentRound+1;
+      totalRounds.textContent = fixtures.length;
+    }
+    return true;
+  }catch(e){
+    console.error(e);
+    return false;
+  }
+}
+
+// --- Events ---
+startBtn.addEventListener('click', () => {
+  initSeason();
+});
+
+loadBtn.addEventListener('click', () => {
+  if(loadGame()){
+    renderLogEntry('Partida cargada.');
+  } else {
+    alert('No hay partida guardada.');
+  }
+});
+
+saveBtn.addEventListener('click', () => {
+  saveGame();
+  renderLogEntry('Partida guardada.');
+});
+
+trainBtn.addEventListener('click', () => {
+  applyTraining();
+});
+
+playBtn.addEventListener('click', () => {
+  playRound();
+});
+
+newSeasonBtn.addEventListener('click', () => {
+  championModal.style.display = 'none';
+  newSeasonBtn.classList.add('hidden');
+  initSeason();
+});
+
+closeChampionBtn.addEventListener('click', () => {
+  championModal.style.display = 'none';
+});
+
+// --- Init ---
+renderTeamsInputs();
+renderManagerSelect();
+renderStandings();
+renderChampionsHistory();
+roundNumber.textContent = currentRound+1;
+totalRounds.textContent = fixtures.length || 0;
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js')
+    .then(() => console.log('Service Worker registrado'))
+    .catch((err) => console.error('Error al registrar SW:', err));
+}
+</script>
+</body>
+</html>
